@@ -2,14 +2,13 @@
 #define CK_TERMINAL_INT_H
 
 /* Standard C11 Libraries */
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 /* Chariklo Subsystem */
-    /* Distant module headers */
-#include "CKtypes.h"
-#include "CKwindow.h"
+#include "CKtypes_int.h"
 
 #define CK_MAX_CANVAS_COLS 256
 #define CK_MAX_CANVAS_ROWS 256
@@ -17,48 +16,29 @@
 // Immutable 17th Blit Character representing true transparency layer pass-through
 #define BLIT_TRANSPARENT_CHAR 'g'
 
+/**
+ * @brief Decoupled Structural Memory Buffers.
+ * Stores both our virtual composition workspace grid and our flat display output surface.
+ */
 typedef struct {
-    int viewportX;
-    int viewportY;
     int viewportWidth;
     int viewportHeight;
-    char charBuffer[CK_MAX_CANVAS_ROWS][CK_MAX_CANVAS_COLS];
-    char textBlitBuffer[CK_MAX_CANVAS_ROWS][CK_MAX_CANVAS_COLS];
-    char bgBlitBuffer[CK_MAX_CANVAS_ROWS][CK_MAX_CANVAS_COLS];
+    
+    /* 1. VIRTUAL BUFFER LAYER: Raw target storage grids where nodes commit data streams */
+    char virtualChar[CK_MAX_CANVAS_ROWS][CK_MAX_CANVAS_COLS];
+    char virtualText[CK_MAX_CANVAS_ROWS][CK_MAX_CANVAS_COLS];
+    char virtualBg[CK_MAX_CANVAS_ROWS][CK_MAX_CANVAS_COLS];
+
+    /* 2. PHYSICAL VIEW LAYER: The final composited results mapping virtual boxes to screen space */
+    char physicalChar[CK_ROWS][CK_COLS];
+    char physicalText[CK_ROWS][CK_COLS];
+    char physicalBg[CK_ROWS][CK_COLS];
 } CKmasterTerminalBuffer;
+
 extern CKmasterTerminalBuffer CKmasterBuffer;
-
-// Unified Composition Header sharing topological and hierarchical state
-struct CKwindowNode {
-    /* Window Tracking */
-    CKrect windowPos;
-    CKpoint windowSize; // Width | Height pair
-
-    /* Cursor Tracking */
-    CKpoint cursorPos;
-    bool cursorBlink;
-
-    /* Color Tracking */
-    unsigned int activeTextColor;
-    unsigned int activeBackgroundColor;
-
-    /* Refresh Tracking */
-    bool isDirty;
-    bool isVisible;
-
-    /* Branch-Leaf Hierarchy and Doubly Linked Window Server Rings */
-    CKwindowNode* parent;
-    CKwindowNode* firstChild;
-    CKwindowNode* prevSibling;
-    CKwindowNode* nextSibling;
-};
 
 // Helper definition to access the active window frame seamlessly
 #define g_current (CKgetTerminal(NULL))
-
-// Master internal tracking references for the Window Server Rings
-extern CKwindowNode* g_NativeWindowNode;
-extern CKwindowNode* g_CurrentWindowNode;
 
 /**
  * @brief Resolves a safe internal window pointer. If an explicit handle is passed,
@@ -66,18 +46,15 @@ extern CKwindowNode* g_CurrentWindowNode;
  * @param handle Opaque public context window handle or NULL.
  * @return A validated internal CKWindowNode structure reference.
  */
-CKwindowNode* CKgetTerminal(CKwindowHandle handle);
+CKwindowHandle CKgetTerminal(CKwindowHandle handle);
 
 void CKterminal_InitMasterBuffer(void);
-CKwindowNode* CKwindow_Create(int x, int y, int width, int height);
-void CKterminal_CascadeDirty(CKwindowNode* root);
-void CKterminal_FreeWindowNode(CKwindowNode* node);
 
-/**
- * @brief Composites the active layout window trees into the master buffer,
- *        then processes and prints the ANSI escape streams out to the terminal.
- */
-void CKplatformRefresh(void);
+CKwindowNode* CKwindow_Create(CKwindowHandle parent, int x, int y, int width, int height);
+
+void CKterminal_CascadeDirty(CKwindowHandle root);
+
+void CKterminal_FreeWindowNode(CKwindowHandle node);
 
 /**
  * @brief Targeted primitive layout engine. Commits raw data text streams 
@@ -87,6 +64,26 @@ void CKplatformRefresh(void);
  * @param count Total number of characters to process.
  * @return Total number of bytes successfully bounded and committed.
  */
-int CKfwritef(CKwindowNode* handle, const void* buffer, size_t count);
+/* STAGE 1: BUFFER LAYER - Commits raw data relative to a node's virtual space box */
+int CKfwritef(CKwindowNode* win, const void* buffer, size_t count);
 
-#endif // CK_TERMINAL_INT_H
+/* STAGE 2: VIEW LAYER - Traverses the hierarchy ring, mapping virtual slices into physical bounds */
+void CKterminal_CompositeTree(CKwindowNode* root);
+
+/**
+ * @brief Composites the active layout window trees into the master buffer,
+ *        then processes and prints the ANSI escape streams out to the terminal.
+ */
+/* STAGE 3: COMPOSITOR LAYER - Platform-specific terminal painter (ANSI streams) */
+void CKplatformRefresh(void);
+
+
+/**
+ * @brief Traverses and serializes the complete active state matrices of both 
+ *        the virtual composition boundaries and flat physical view surfaces.
+ * @param filename The output filepath target (e.g., "chariklo_render_dump.txt").
+ */
+void CKterminal_DumpState(const char* filename);
+
+
+#endif /* CK_TERMINAL_INT_H */

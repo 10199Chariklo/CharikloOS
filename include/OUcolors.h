@@ -1,30 +1,17 @@
 #ifndef CK_COLORS_H
 #define CK_COLORS_H
 
-/* Chariklo Subsystem */
-    /* Distant module headers */
+/* Chariklo subsystem */
 #include "CKtypes.h"
 
 // Public structure containing color IDs for API/Shell integration
 typedef struct {
-    unsigned int white;
-    unsigned int orange;
-    unsigned int magenta;
-    unsigned int lightBlue;
-    unsigned int yellow;
-    unsigned int lime;
-    unsigned int pink;
-    unsigned int grey;
-    unsigned int lightGrey;
-    unsigned int cyan;
-    unsigned int purple;
-    unsigned int blue;
-    unsigned int brown;
-    unsigned int green;
-    unsigned int red;
-    unsigned int black;
-} CKcolorsPublicInterface;
-extern const CKcolorsPublicInterface CKcolors;
+    unsigned int white;     unsigned int orange;    unsigned int magenta;   unsigned int lightBlue;
+    unsigned int yellow;    unsigned int lime;      unsigned int pink;      unsigned int grey;
+    unsigned int lightGrey; unsigned int cyan;      unsigned int purple;    unsigned int blue;
+    unsigned int brown;     unsigned int green;     unsigned int red;       unsigned int black;
+} CKcolorsInterface;
+extern const CKcolorsInterface CKcolors;
 
 // Public functions
 

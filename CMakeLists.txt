@@ -32,9 +32,8 @@ set(KERNEL_SOURCES ${CORE_SOURCES} ${PHYSFS_SOURCES})
 # --------------------------------------------------------------------------
 # INDEPENDENT UNIT TEST TARGETS
 # --------------------------------------------------------------------------
-# Register our standalone PhysFS Playground binary execution file
-add_executable(RevisionTest04 
-    unittest/RevisionTest04 
+add_executable(RevisionTest05 
+    unittest/RevisionTest05 
     ${KERNEL_SOURCES}
 )
 
@@ -42,5 +41,5 @@ add_executable(RevisionTest04
 # explicitly direct the linker to map console outputs safely.
 # Our setup routine begines as a WinAPI GUI application - So we can safely call AllocConsole and style a console with impunity
 if(WIN32)
-    target_link_libraries(RevisionTest04 PRIVATE "-mwindows")
+    target_link_libraries(RevisionTest05 PRIVATE "-mwindows")
 endif()

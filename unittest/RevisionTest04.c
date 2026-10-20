@@ -3,11 +3,17 @@
    Target: Verification of Geometric Metrics, CK_ENV, and Stream Routing
    ========================================================================== */
 
+#include <windows.h>
+
 #include <conio.h>  // Used for non-blocking keyboard input loop hooks on Windows
 
 /* Chariklo Framework Subsystem Abstractions */
-#include "OUsetup.h"
-#include "OUsetup_int.h"
+#include "CKterminal_int.h"
+#include "OUwindow.h"
+#include "CKsetup.h"
+#include "CKtypes.h"
+#include "CKio.h"
+#include "OUterm.h"
 
 void renderPaletteDiagnostics(CKwindowNode* win) {
     if (win == NULL) return;
@@ -77,11 +83,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
 
     // 2. Establish Workspace Viewports using our 5-parameter signature bounding box
     // Main system state arena
-    CKwindowNode* winSystem  = (CKwindowNode*)CKcreate((CKwindowHandle)CK_ENV.nativeWindowNode, 2, 1, 46, 16);
+    CKwindowNode* winSystem  = (CKwindowNode*)OUcreate((CKwindowHandle)CK_ENV.nativeWindowNode, 2, 1, 46, 16);
     // Color diagnostic view
-    CKwindowNode* winPalette = (CKwindowNode*)CKcreate((CKwindowHandle)CK_ENV.nativeWindowNode, 50, 1, 28, 16);
+    CKwindowNode* winPalette = (CKwindowNode*)OUcreate((CKwindowHandle)CK_ENV.nativeWindowNode, 50, 1, 28, 16);
     // Diagnostic logging deck along the base
-    CKwindowNode* winLog     = (CKwindowNode*)CKcreate((CKwindowHandle)CK_ENV.nativeWindowNode, 2, 18, 76, 11);
+    CKwindowNode* winLog     = (CKwindowNode*)OUcreate((CKwindowHandle)CK_ENV.nativeWindowNode, 2, 18, 76, 11);
 
     if (!winSystem || !winPalette || !winLog) {
         fprintf(stderr, "[FATAL] Viewport allocation failed during boundary calculation.\n");

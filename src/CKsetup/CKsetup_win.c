@@ -2,12 +2,15 @@
 #include <windows.h>
 
 /* Standard C11 Libraries */
+#include <stdbool.h>
 #include <stdio.h>
 
 /* Chariklo Subsystem */
-    /* Local module headers */
-#include "OUsetup.h"
-#include "OUsetup_int.h"
+#include "CKsetup.h" // Local module header
+#include "CKterminal_int.h"
+#include "CKpalette_int.h"
+#include "CKtypes_int.h" // To complete the PR and that may be it
+#include "OUwindow.h"
 
 // Platform requirements
 CKplatformReqs PR;
@@ -20,7 +23,34 @@ static FILE *ckCONIN$ = NULL;
 static FILE *ckCONOUT$ = NULL;
 static FILE *ckCONERR$ = NULL;
 
-// Public functions
+/* Internal functions */
+
+    /** */
+bool CKstreamAssignment(void) {
+    freopen_s(&ckCONIN$,  "CONIN$",  "r", stdin);
+    freopen_s(&ckCONOUT$, "CONOUT$", "w", stdout);
+    freopen_s(&ckCONERR$, "CONERR$", "w", stderr);
+    // Streams are valid - return true
+    if (ckCONIN$    ==  NULL    ||
+        ckCONOUT$   ==  NULL    ||
+        ckCONERR$   ==  NULL    ) return false;
+    return true;
+}
+
+    /** */
+bool CKhandleAssignment(void) {
+    PR.ckSTD_INPUT = GetStdHandle(STD_INPUT_HANDLE);
+    PR.ckSTD_OUTPUT = GetStdHandle(STD_OUTPUT_HANDLE);
+    PR.ckSTD_ERROR = GetStdHandle(STD_ERROR_HANDLE);
+    // Handles are valid - return true
+    if (PR.ckSTD_INPUT     ==  INVALID_HANDLE_VALUE    ||
+        PR.ckSTD_OUTPUT    ==  INVALID_HANDLE_VALUE    ||
+        PR.ckSTD_ERROR     ==  INVALID_HANDLE_VALUE    ) return false;
+    return true;
+}
+
+/* Public functions */
+
     /*  1. Call internal safety checks
         2. Perform AllocConsole, window layout configurations, styling parameters
         3. Return status flag */
@@ -105,11 +135,15 @@ bool CKconsoleSetup(void) {
 
     // 8. CRITICAL ALIGNMENT FIX: Invoke 5-parameter signature bounding box.
     // Roots the fallback desktop chassis at origin coordinates (0, 0)
-    CKwindowHandle nativeBootHandle = CKcreate(NULL, 0, 0, CK_COLS, CK_ROWS);
+    CKwindowHandle nativeBootHandle = OUcreate(NULL, 0, 0, CK_COLS, CK_ROWS);
     if (nativeBootHandle == NULL) {
-        fprintf(stderr, "[CKsetup Collapse] Critical failure allocating Native Background Node framework.\n");
+        fprintf(stderr, "[CKsetup Collapse] Critical failure allocating Native Window Node.\n");
         return false;
     }
+
+    // BINDING: Safely attach our freshly allocated root node straight to the environment global
+    CK_ENV.nativeWindowNode  = (CKwindowNode*)nativeBootHandle;
+    CK_ENV.currentWindowNode = (CKwindowNode*)nativeBootHandle;
 
     isInitialized = true;
     return true;
@@ -132,30 +166,6 @@ bool CKconsoleTeardown(void) {
 
     // Flip isInitialized
     isInitialized = false;
-    return true;
-}
-
-/* Internal functions */
-
-bool CKstreamAssignment(void) {
-    freopen_s(&ckCONIN$,  "CONIN$",  "r", stdin);
-    freopen_s(&ckCONOUT$, "CONOUT$", "w", stdout);
-    freopen_s(&ckCONERR$, "CONERR$", "w", stderr);
-    // Streams are valid - return true
-    if (ckCONIN$    ==  NULL    ||
-        ckCONOUT$   ==  NULL    ||
-        ckCONERR$   ==  NULL    ) return false;
-    return true;
-}
-
-bool CKhandleAssignment(void) {
-    PR.ckSTD_INPUT = GetStdHandle(STD_INPUT_HANDLE);
-    PR.ckSTD_OUTPUT = GetStdHandle(STD_OUTPUT_HANDLE);
-    PR.ckSTD_ERROR = GetStdHandle(STD_ERROR_HANDLE);
-    // Handles are valid - return true
-    if (PR.ckSTD_INPUT     ==  INVALID_HANDLE_VALUE    ||
-        PR.ckSTD_OUTPUT    ==  INVALID_HANDLE_VALUE    ||
-        PR.ckSTD_ERROR     ==  INVALID_HANDLE_VALUE    ) return false;
     return true;
 }
 

@@ -1,16 +1,8 @@
 #ifndef CK_IO_H
 #define CK_IO_H
 
-// A one-Jump linker exception would instantly transform this header to OU prefixed - stdbool is also located in CKtypes
-// Woes to my slow PC - No linker exceptions allowed until we are approching final build states
-/* Standard C11 Libraries */
-#include <stdbool.h>
-
-// I suppose the ultimate linker exception is always 'forgetting' a header *wink wink* - ... Don't do that lol
-
 /* Chariklo Subsystem */
-    /* Distant module headers */
-#include "CKtypes.h"
+#include "CKtypes_int.h"
 
 // Publicly expose the file handle as a completely opaque pointer type
 typedef struct CKfile* CKfileHandle;
