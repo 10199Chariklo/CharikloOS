@@ -32,7 +32,6 @@ int CKprint(const char* format, ...);
     * @arg{ x } For holding x position of the cursor.
     * @arg{ y } For holding y position of the cursor. */
 void CKgetCursorPos(int *x, int *y);
-
     /**
     * @brief Sets the position of the cursor.
     * @arg{ x } The new x position of the cursor.
@@ -43,7 +42,6 @@ void CKsetCursorPos(const int x, const int y);
     * @arg{ state } For holding the blink state of the cursor.
     * @return False on CKcciUpdate failure. */
 bool CKgetCursorBlink(bool *state);
-
     /**
     * @arg{ state } The new blink state of the cursor.
     * @return true on success, false on failure. */
@@ -59,7 +57,6 @@ void CKgetSize(int *x, int *y);
     * @brief Clears the target terminal matrix completely using the active background attributes.
     * @return true on success, false on failure.                                                    */
 bool CKclear(void);
-
     /**
     * @return true on success, false on failure.    */
 bool CKclearLine(void);
@@ -67,7 +64,6 @@ bool CKclearLine(void);
     /**
     * @brief Extracts the currently active text foreground color flags. */
 unsigned int CKgetTextColor(void);
-
     /**
     * @brief Sets the console foreground cell color attributes.
     * @param colorMask The target attribute.
@@ -77,11 +73,10 @@ bool CKsetTextColor(unsigned int colorsMask);
     /**
     * @brief Extracts the currently active screen background color flags. */
 unsigned int CKgetBackgroundColor(void);
-
     /**
     * @brief Sets the console background cell color attributes.
     * @param colorMask The target attribute.
     * @return true on success, false if OS update fails.        */
 bool CKsetBackgroundColor(unsigned int colorsMask);
 
-#endif // OU_TERM_H
+#endif /* OU_TERM_H */

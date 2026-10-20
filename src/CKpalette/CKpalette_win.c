@@ -2,13 +2,11 @@
 #include <windows.h>
 
 /* Standard C11 Libraries */
+#include <stdbool.h>
 #include <stdio.h>
 
 /* Chariklo Subsystem */
-    /* Local module headers */
-#include "CKpalette_int.h"
-    /* Distant module headers */
-#include "OUsetup_int.h"
+#include "CKpalette_int.h" // Local module header
 #include "CKterminal_int.h"
 
 void CKinitWinPalette(void) {
@@ -50,56 +48,40 @@ bool CKwin_GetCSISequence(char* destinationBuffer, size_t bufferSize, char blitC
                            CKcolorTargetContext context, int screenX, int screenY) {
     if (destinationBuffer == NULL || bufferSize < 32) return false;
 
-    // 1. Transparency Pass-Through Resolver
-    if (blitChar == BLIT_TRANSPARENT_CHAR) { // 'g'
-        // SANITY BOUNDS CHECK: Verify constraints
-        if (screenX >= 0 && screenX < CK_COLS && screenY >= 0 && screenY < CK_ROWS) {
-            
-            // Sample what is currently underneath on the canvas
-            if (context == CK_COLOR_TARGET_FOREGROUND) {
-                blitChar = CKmasterBuffer.textBlitBuffer[screenY][screenX];
-            } else {
-                blitChar = CKmasterBuffer.bgBlitBuffer[screenY][screenX];
-            }
-        }
-        
-        // If the sampled character is still uninitialized or transparent, resolve to an ultimate default
-        if (blitChar == BLIT_TRANSPARENT_CHAR) {
-            blitChar = (context == CK_COLOR_TARGET_FOREGROUND) ? '0' : 'f'; // White fg, Black bg
-        }
+    // Direct Token Fallback Protection
+    if (blitChar == BLIT_TRANSPARENT_CHAR) {
+        blitChar = (context == CK_COLOR_TARGET_FOREGROUND) ? '0' : 'f'; 
     }
 
-    // 2. Locate the matching color entry down our internal indexing interface structure array
+    // Index Matrix Matcher
     int colorIndex = -1;
     for (int i = 0; i < 16; i++) {
-        if (CKcolorsInt.data[i].blitChar == blitChar) {
+        if (CKpalette.data[i].blitChar == blitChar) {
             colorIndex = i;
             break;
         }
     }
 
-    // Corrupted token fallback protection
     if (colorIndex == -1) {
         if (context == CK_COLOR_TARGET_FOREGROUND) {
-            snprintf(destinationBuffer, bufferSize, "\x1b[38;2;240;240;240m"); // #F0F0F0
+            snprintf(destinationBuffer, bufferSize, "\x1b[38;2;240;240;240m"); 
         } else {
-            snprintf(destinationBuffer, bufferSize, "\x1b[48;2;17;17;17m");    // #111111
+            snprintf(destinationBuffer, bufferSize, "\x1b[48;2;17;17;17m");    
         }
         return true;
     }
 
-    // 3. Parse out raw hex values (#RRGGBB) directly from our internal data fields
+    // Hex Channel Processor
     unsigned int redChannel = 0, greenChannel = 0, blueChannel = 0;
-    if (sscanf_s(CKcolorsInt.data[colorIndex].hexColor, "#%02x%02x%02x", 
+    if (sscanf_s(CKpalette.data[colorIndex].hexColor, "#%02x%02x%02x", 
                  &redChannel, &greenChannel, &blueChannel) != 3) {
         return false;
     }
 
-    // Render the final Standard CSI Escape block format: "\x1b[38;2;R;G;Bm" or "\x1b[48;2;R;G;Bm"
     snprintf(destinationBuffer, bufferSize, "\x1b[%d;2;%u;%u;%um", 
              (int)context, redChannel, greenChannel, blueChannel);
              
     return true;
 }
 
-#endif // _WIN32
+#endif /* _WIN32 */

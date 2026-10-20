@@ -1,0 +1,365 @@
+/* Standard C11 Libraries */
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Chariklo Subsystem */
+#include "CKterminal_int.h" // Local module header
+#include "CKpalette_int.h"
+
+// Define the global master engine buffer instance
+CKmasterTerminalBuffer CKmasterBuffer;
+
+// Concrete initialization instance of the global Chariklo execution environment registers
+CKenv CK_ENV = {
+    .nativeWindowNode = NULL,
+    .currentWindowNode = NULL,
+    .termPending = false,
+    .activeSystemTick = 0
+};
+
+// Next available top-left positioning coordinate track inside our virtual grid block
+static int g_nextVirtualX = 0;
+static int g_nextVirtualY = 0;
+
+CKwindowNode* CKgetTerminal(CKwindowHandle handle) {
+    // If a specific workspace frame is passed explicitly, decode and return it
+    if (handle != NULL) return (CKwindowNode*)handle;
+    
+    // Fallback 1: If an active redirected context is running, return it
+    if (CK_ENV.currentWindowNode != NULL) return CK_ENV.currentWindowNode;
+    
+    // Fallback 2: Ultimate fallback to the base chassis frame configuration
+    if (CK_ENV.nativeWindowNode != NULL) return CK_ENV.nativeWindowNode;
+    
+    // Hard failure recovery: Returns NULL if setup has completely skipped initialization
+    return NULL;
+}
+
+void CKterminal_InitMasterBuffer(void) {
+    CKmasterBuffer.viewportWidth = CK_COLS;
+    CKmasterBuffer.viewportHeight = CK_ROWS;
+
+    // Reset virtual blocks
+    memset(CKmasterBuffer.virtualChar, ' ', sizeof(CKmasterBuffer.virtualChar));
+    memset(CKmasterBuffer.virtualText, '0', sizeof(CKmasterBuffer.virtualText));
+    memset(CKmasterBuffer.virtualBg, BLIT_TRANSPARENT_CHAR, sizeof(CKmasterBuffer.virtualBg));
+
+    // Reset physical view blocks
+    memset(CKmasterBuffer.physicalChar, ' ', sizeof(CKmasterBuffer.physicalChar));
+    memset(CKmasterBuffer.physicalText, '0', sizeof(CKmasterBuffer.physicalText));
+    memset(CKmasterBuffer.physicalBg, BLIT_TRANSPARENT_CHAR, sizeof(CKmasterBuffer.physicalBg));
+}
+
+CKwindowNode* CKwindow_Create(CKwindowHandle parent, int x, int y, int width, int height) {
+    // 1. Allocate block memory segment
+    CKwindowNode* node = (CKwindowNode*)malloc(sizeof(CKwindowNode));
+    if (node == NULL) return NULL;
+
+    // 2. Map target viewport screen dimensions
+    node->windowPos.startX = x;
+    node->windowPos.startY = y;
+    node->windowPos.endX   = x + width;
+    node->windowPos.endY   = y + height;
+    node->windowSize.x     = width;
+    node->windowSize.y     = height;
+
+    // 3. Segment isolated virtual allocation coordinates
+    node->windowBufferPos.startX = g_nextVirtualX;
+    node->windowBufferPos.startY = g_nextVirtualY;
+    node->windowBufferPos.endX   = g_nextVirtualX + width;
+    node->windowBufferPos.endY   = g_nextVirtualY + height;
+
+    // Packing stack pointer progression arithmetic
+    g_nextVirtualY += height;
+    if (g_nextVirtualY >= CK_MAX_CANVAS_ROWS) {
+        g_nextVirtualY = 0;
+        g_nextVirtualX += width; // Wrap columns safely
+    }
+
+    // 4. Initialize structural tracking registries
+    node->cursorPos.x = 0;
+    node->cursorPos.y = 0;
+    node->cursorBlink = true;
+    node->isDirty     = true;
+    node->isVisible   = true;
+    
+    node->parent       = parent;
+    node->firstChild   = NULL;
+    node->prevSibling  = NULL;
+    node->nextSibling  = NULL;
+
+    // 5. STATEFUL COLOR INHERITANCE INJECTION
+    // Rather than performing loops on every keystroke, the creation pipeline samples 
+    // the parent's active layout colors once right at birth. If parentless, it applies defaults.
+    char defaultTextBlit, defaultBgBlit;
+    
+    if (parent == NULL) {
+        node->activeTextColor       = 0x0001; // Default White bitmask code
+        node->activeBackgroundColor = 0x8000; // Default Black bitmask code
+        defaultTextBlit = '0';
+        defaultBgBlit   = 'f';
+    } else {
+        CKwindowNode* parentNode = (CKwindowNode*)parent;
+        node->activeTextColor       = parentNode->activeTextColor;
+        node->activeBackgroundColor = parentNode->activeBackgroundColor;
+        
+        // The virtual buffers remain completely transparent pass-through spaces.
+        // This ensures the window does not corrupt lower layout layers until it draws content!
+        defaultTextBlit = BLIT_TRANSPARENT_CHAR; // 'g'
+        defaultBgBlit   = BLIT_TRANSPARENT_CHAR; // 'g'
+    }
+
+    // Initialize the window's allocated slice inside the virtual grid arrays
+    for (int r = 0; r < height; r++) {
+        for (int c = 0; c < width; c++) {
+            int vX = node->windowBufferPos.startX + c;
+            int vY = node->windowBufferPos.startY + r;
+
+            if (vX >= 0 && vX < CK_MAX_CANVAS_COLS && vY >= 0 && vY < CK_MAX_CANVAS_ROWS) {
+                CKmasterBuffer.virtualChar[vY][vX] = ' ';
+                CKmasterBuffer.virtualText[vY][vX] = defaultTextBlit;
+                CKmasterBuffer.virtualBg[vY][vX]   = defaultBgBlit;
+            }
+        }
+    }
+
+    return node;
+}
+
+void CKterminal_CascadeDirty(CKwindowNode* root) {
+    if (root == NULL) return;
+    root->isDirty = true;
+
+    CKwindowNode* child = root->firstChild;
+    while (child != NULL) {
+        CKterminal_CascadeDirty(child);
+        child = child->nextSibling;
+    }
+}
+
+void CKterminal_FreeWindowNode(CKwindowNode* node) {
+    if (node == NULL) return;
+
+    // Safely detach hierarchical topological nodes before executing memory cleanups
+    if (node->prevSibling) node->prevSibling->nextSibling = node->nextSibling;
+    if (node->nextSibling) node->nextSibling->prevSibling = node->prevSibling;
+    if (node->parent && node->parent->firstChild == node) node->parent->firstChild = node->nextSibling;
+
+    // CKTBO and CKTBOex allocations are both safely released through the common base header
+    free(node);
+    printf("[CKgc] Target Window Object successfully collected and freed.\n");
+}
+
+/* STAGE 1: THE BUFFER LAYER APPLICATION WRITE */
+int CKfwritef(CKwindowNode* win, const void* buffer, size_t count) {
+    if (win == NULL || buffer == NULL || count == 0) return 0;
+    
+    const char* sourceBytes = (const char*)buffer;
+    int bytesCommitted = 0;
+
+    // Cache blit mappings to optimize lookup execution overhead loops
+    char activeTBlit = '0'; 
+    if (win->activeTextColor == BLIT_TRANSPARENT_CHAR) { // 'g'
+        activeTBlit = BLIT_TRANSPARENT_CHAR;
+    } else {
+        for (int i = 0; i < 16; i++) {
+            if (CKpalette.data[i].colorID == win->activeTextColor) {
+                activeTBlit = CKpalette.data[i].blitChar;
+                break;
+            }
+        }
+    }
+
+    // ARCHITECTURAL INTERCEPT: If the window container's state background color is explicitly 
+    // configured to use alpha pass-through ('g'), preserve it! Otherwise, perform the palette lookup.
+    char activeBBlit = 'f';
+    if (win->activeBackgroundColor == BLIT_TRANSPARENT_CHAR) { // 'g'
+        activeBBlit = BLIT_TRANSPARENT_CHAR;
+    } else {
+        for (int i = 0; i < 16; i++) {
+            if (CKpalette.data[i].colorID == win->activeBackgroundColor) {
+                activeBBlit = CKpalette.data[i].blitChar;
+                break;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        char character = sourceBytes[i];
+
+        if (character == '\n') {
+            win->cursorPos.x = 0;
+            win->cursorPos.y++;
+            bytesCommitted++;
+            continue;
+        }
+
+        // Relative local boundary tracking clip check
+        if (win->cursorPos.x >= 0 && win->cursorPos.x < win->windowSize.x &&
+            win->cursorPos.y >= 0 && win->cursorPos.y < win->windowSize.y) {
+
+            // MAP STRATEGY: Offset relative vectors straight into your isolated virtual buffer block bounds
+            int vX = win->windowBufferPos.startX + win->cursorPos.x;
+            int vY = win->windowBufferPos.startY + win->cursorPos.y;
+
+            if (vX >= 0 && vX < CK_MAX_CANVAS_COLS && vY >= 0 && vY < CK_MAX_CANVAS_ROWS) {
+                CKmasterBuffer.virtualChar[vY][vX] = character;
+                CKmasterBuffer.virtualText[vY][vX] = activeTBlit;
+                CKmasterBuffer.virtualBg[vY][vX]   = activeBBlit;
+            }
+        }
+        win->cursorPos.x++; 
+        bytesCommitted++;
+    }
+
+    win->isDirty = true; 
+    CK_ENV.termPending = true;
+    return bytesCommitted;
+}
+
+/* STAGE 2: THE COMPOSITOR VIEW TREE COUPLER */
+void CKterminal_CompositeTree(CKwindowNode* root) {
+    if (root == NULL || !root->isVisible) return;
+
+    int width = root->windowSize.x;
+    int height = root->windowSize.y;
+
+    for (int relativeY = 0; relativeY < height; relativeY++) {
+        for (int relativeX = 0; relativeX < width; relativeX++) {
+            
+            int physicalX = root->windowPos.startX + relativeX;
+            int physicalY = root->windowPos.startY + relativeY;
+
+            // Enforce hard hardware viewport layout constraints
+            if (physicalX >= 0 && physicalX < CK_COLS && physicalY >= 0 && physicalY < CK_ROWS) {
+                int virtualX = root->windowBufferPos.startX + relativeX;
+                int virtualY = root->windowBufferPos.startY + relativeY;
+
+                char virtualBgToken  = CKmasterBuffer.virtualBg[virtualY][virtualX];
+                char virtualTxtToken = CKmasterBuffer.virtualText[virtualY][virtualX];
+                char virtualChar     = CKmasterBuffer.virtualChar[virtualY][virtualX];
+
+                // --- FLAT PHYSICAL SAMPLING PARADIGM ---
+                // If this window's virtual buffer slot contains 'g' (Transparent Pass-Thru),
+                // we DO NOT mutate the physical matrix cell. We leave whatever sibling window
+                // processed before us on that coordinate untouched!
+
+                // Channel 1: Background Layer Tracker
+                if (virtualBgToken != BLIT_TRANSPARENT_CHAR) {
+                    CKmasterBuffer.physicalBg[physicalY][physicalX] = virtualBgToken;
+                }
+                
+                // Channel 2: Foreground Layer Tracker (Completely independent!)
+                if (virtualTxtToken != BLIT_TRANSPARENT_CHAR) {
+                    CKmasterBuffer.physicalText[physicalY][physicalX] = virtualTxtToken;
+                }
+
+                // Channel 3: Glyph Shape Tracker
+                // If a user blits a text character string, it stamps over the physical channel.
+                // If it's a blank space, it leaves whatever background character glyphs are below it!
+                if (virtualChar != ' ') {
+                    CKmasterBuffer.physicalChar[physicalY][physicalX] = virtualChar;
+                }
+            }
+        }
+    }
+
+    // Recurse sequentially over your child window nodes from back to front.
+    // The sibling link order inside your tree list naturally defines the true Z-Index layers!
+    CKwindowNode* child = root->firstChild;
+    while (child != NULL) {
+        CKterminal_CompositeTree(child);
+        child = child->nextSibling;
+    }
+}
+
+
+
+void CKterminal_DumpState(const char* filename) {
+    if (filename == NULL) return;
+
+    FILE* dumpFile = NULL;
+    // Using standard C11 secure file locks
+    if (fopen_s(&dumpFile, filename, "w") != 0 || dumpFile == NULL) {
+        return;
+    }
+
+    fprintf(dumpFile, "========================================================================\n");
+    fprintf(dumpFile, "       CHARIKLO OS SYSTEM ARCHITECTURE MATRIX DISCOVERY HARNESS\n");
+    fprintf(dumpFile, "========================================================================\n\n");
+
+    // 1. DUMP THE FLAT PHYSICAL COMPOSITOR LAYER (What Stage 3 physically paints)
+    fprintf(dumpFile, "--- [STAGE 2 VIEW SURFACE: PHYSICAL MATRIX SECTOR (%dx%d)] ---\n", CK_ROWS, CK_COLS);
+    
+    fprintf(dumpFile, "\n[PHYSICAL CHARACTER GRID]\n");
+    for (int y = 0; y < CK_ROWS; y++) {
+        fprintf(dumpFile, "Row %02d: |", y);
+        for (int x = 0; x < CK_COLS; x++) {
+            fputc(CKmasterBuffer.physicalChar[y][x], dumpFile);
+        }
+        fprintf(dumpFile, "|\n");
+    }
+
+    fprintf(dumpFile, "\n[PHYSICAL TEXT BLIT TOKENS]\n");
+    for (int y = 0; y < CK_ROWS; y++) {
+        fprintf(dumpFile, "Row %02d: |", y);
+        for (int x = 0; x < CK_COLS; x++) {
+            fputc(CKmasterBuffer.physicalText[y][x], dumpFile);
+        }
+        fprintf(dumpFile, "|\n");
+    }
+
+    fprintf(dumpFile, "\n[PHYSICAL BACKGROUND BLIT TOKENS]\n");
+    for (int y = 0; y < CK_ROWS; y++) {
+        fprintf(dumpFile, "Row %02d: |", y);
+        for (int x = 0; x < CK_COLS; x++) {
+            fputc(CKmasterBuffer.physicalBg[y][x], dumpFile);
+        }
+        fprintf(dumpFile, "|\n");
+    }
+
+    // 2. DUMP THE SECTOR VIRTUAL PARTITIONS (Raw data tracks where Stage 1 commits)
+    fprintf(dumpFile, "\n\n========================================================================\n");
+    fprintf(dumpFile, "--- [STAGE 1 BUFFER TRACKS: VIRTUAL MATRIX SECTOR (%dx%d)] ---\n", CK_MAX_CANVAS_ROWS, CK_MAX_CANVAS_COLS);
+    fprintf(dumpFile, "========================================================================\n");
+
+    fprintf(dumpFile, "\n[VIRTUAL CHARACTER ACQUISITION PLANES]\n");
+    for (int y = 0; y < CK_MAX_CANVAS_ROWS; y++) {
+        // Optimization: Only print virtual tracks that are not totally unallocated spaces
+        bool rowHasData = false;
+        for (int x = 0; x < CK_MAX_CANVAS_COLS; x++) {
+            if (CKmasterBuffer.virtualChar[y][x] != ' ' || CKmasterBuffer.virtualBg[y][x] != BLIT_TRANSPARENT_CHAR) {
+                rowHasData = true;
+                break;
+            }
+        }
+        if (!rowHasData) continue; // Skip large dead memory zones to keep text file small
+
+        fprintf(dumpFile, "V-Row %03d: |", y);
+        for (int x = 0; x < CK_MAX_CANVAS_COLS; x++) {
+            fputc(CKmasterBuffer.virtualChar[y][x], dumpFile);
+        }
+        fprintf(dumpFile, "|\n");
+    }
+
+    fprintf(dumpFile, "\n[VIRTUAL BACKGROUND BLIT PLANES]\n");
+    for (int y = 0; y < CK_MAX_CANVAS_ROWS; y++) {
+        bool rowHasData = false;
+        for (int x = 0; x < CK_MAX_CANVAS_COLS; x++) {
+            if (CKmasterBuffer.virtualBg[y][x] != BLIT_TRANSPARENT_CHAR) {
+                rowHasData = true;
+                break;
+            }
+        }
+        if (!rowHasData) continue;
+
+        fprintf(dumpFile, "V-Row %03d: |", y);
+        for (int x = 0; x < CK_MAX_CANVAS_COLS; x++) {
+            fputc(CKmasterBuffer.virtualBg[y][x], dumpFile);
+        }
+        fprintf(dumpFile, "|\n");
+    }
+
+    fclose(dumpFile);
+}

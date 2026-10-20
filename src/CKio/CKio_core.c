@@ -5,12 +5,10 @@
 #include <stdlib.h>
 
 /* Chariklo Subsystem */
-    /* Local module headers */
-#include "CKio.h"
-    /* Distant module headers */
-#include "CKwindow.h"
+#include "CKio.h" // Local module header
 #include "CKterminal_int.h"
 #include "CKpalette_int.h"
+#include "OUwindow.h"
 
 #define CK_IO_PARSING_LIMIT 1024
 

@@ -8,22 +8,22 @@ Because our core architecture is designed to be highly modular, our codebase is 
 
 Not every module fits neatly into a standard template. If you are importing external codebases or writing platform-specific extensions, structure your module using the boundary rules below to match our architectural system:
 
-[ External Library / Raw File ]  <-- e.g., PhysicsFS, custom asset packs
-│
-▼
-┌───────────────────────┐
-│   module_platform.c   │  <-- Handles OS-specific hooks (Win32, Posix, Bare-Metal)
-└───────────┬───────────┘
-│
-▼
-┌───────────────────────┐
-│    module_core.c      │  <-- Core memory allocation and hardware-agnostic states
-└───────────┬───────────┘
-│
-▼
-┌───────────────────────┐
-│       module.h        │  <-- Exposes clean, Opaque Handles to the application layer
-└───────────────────────┘
+    [ External Library / Raw File ]  <-- e.g., PhysicsFS, custom asset packs
+    │
+    ▼
+    ┌───────────────────────┐
+    │   module_platform.c   │  <-- Handles OS-specific hooks (Win32, Posix, Bare-Metal)
+    └───────────┬───────────┘
+    │
+    ▼
+    ┌───────────────────────┐
+    │    module_core.c      │  <-- Core memory allocation and hardware-agnostic states
+    └───────────┬───────────┘
+    │
+    ▼
+    ┌───────────────────────┐
+    │       module.h        │  <-- Exposes clean, Opaque Handles to the application layer
+    └───────────────────────┘
 
 *   **`module_platform.c` (The Ground):** Isolates native system anomalies (e.g., Win32 `AllocConsole`, raw framebuffer pipes) so the rest of the code remains fully portable.
 *   **`module_core.c` (The Engine):** Implements internal algorithms and manages memory buffers using raw primitives.
