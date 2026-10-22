@@ -17,6 +17,12 @@
 #define CK_ROWS 30
 #endif
 
+// Immutable 17th Blit Character representing true transparency layer pass-through
+#define BLIT_TRANSPARENT_CHAR 'g'
+
+// Immutable character glyph representing no entry
+#define CK_GLYPH_VOID  ((char)0xFF) 
+
 /* Public Spatial Abstractions */
 typedef struct {
     int x;

@@ -41,14 +41,14 @@ void CKterminal_InitMasterBuffer(void) {
     CKmasterBuffer.viewportHeight = CK_ROWS;
 
     // Reset virtual blocks
-    memset(CKmasterBuffer.virtualChar, ' ', sizeof(CKmasterBuffer.virtualChar));
-    memset(CKmasterBuffer.virtualText, '0', sizeof(CKmasterBuffer.virtualText));
+    memset(CKmasterBuffer.virtualChar, CK_GLYPH_VOID, sizeof(CKmasterBuffer.virtualChar));
+    memset(CKmasterBuffer.virtualText, BLIT_TRANSPARENT_CHAR, sizeof(CKmasterBuffer.virtualText));
     memset(CKmasterBuffer.virtualBg, BLIT_TRANSPARENT_CHAR, sizeof(CKmasterBuffer.virtualBg));
 
     // Reset physical view blocks
     memset(CKmasterBuffer.physicalChar, ' ', sizeof(CKmasterBuffer.physicalChar));
     memset(CKmasterBuffer.physicalText, '0', sizeof(CKmasterBuffer.physicalText));
-    memset(CKmasterBuffer.physicalBg, BLIT_TRANSPARENT_CHAR, sizeof(CKmasterBuffer.physicalBg));
+    memset(CKmasterBuffer.physicalBg, 'f', sizeof(CKmasterBuffer.physicalBg));
 }
 
 CKwindowNode* CKwindow_Create(CKwindowHandle parent, int x, int y, int width, int height) {
@@ -117,7 +117,7 @@ CKwindowNode* CKwindow_Create(CKwindowHandle parent, int x, int y, int width, in
             int vY = node->windowBufferPos.startY + r;
 
             if (vX >= 0 && vX < CK_MAX_CANVAS_COLS && vY >= 0 && vY < CK_MAX_CANVAS_ROWS) {
-                CKmasterBuffer.virtualChar[vY][vX] = ' ';
+                CKmasterBuffer.virtualChar[vY][vX] = CK_GLYPH_VOID;
                 CKmasterBuffer.virtualText[vY][vX] = defaultTextBlit;
                 CKmasterBuffer.virtualBg[vY][vX]   = defaultBgBlit;
             }
@@ -258,7 +258,7 @@ void CKterminal_CompositeTree(CKwindowNode* root) {
                 // Channel 3: Glyph Shape Tracker
                 // If a user blits a text character string, it stamps over the physical channel.
                 // If it's a blank space, it leaves whatever background character glyphs are below it!
-                if (virtualChar != ' ') {
+                if (virtualChar != CK_GLYPH_VOID) {
                     CKmasterBuffer.physicalChar[physicalY][physicalX] = virtualChar;
                 }
             }
@@ -274,7 +274,50 @@ void CKterminal_CompositeTree(CKwindowNode* root) {
     }
 }
 
+bool CKclearContext_int(CKwindowNode* node, char tBlit, char bBlit, int line) {
+    if (node == NULL) return false;
 
+    // Determine vertical bounding limits based on optional parameter state
+    int startY = 0;
+    int endY = node->windowSize.y;
+
+    if (line != -1) {
+        // Enforce localized clip constraints if a single relative line is targeted
+        if (line < 0 || line >= node->windowSize.y) return false;
+        startY = line;
+        endY = line + 1;
+    }
+
+    // ARCHITECTURAL UPGRADE: If the background blit targets alpha pass-through ('g'),
+    // we use CK_GLYPH_VOID so lower characters show through. Otherwise, we stamp spaces (' ').
+    char fillGlyph = (bBlit == BLIT_TRANSPARENT_CHAR) ? CK_GLYPH_VOID : ' ';
+
+    // Traverse targets inside this window node's virtual coordinate block
+    for (int y = startY; y < endY; y++) {
+        for (int x = 0; x < node->windowSize.x; x++) {
+            int vX = node->windowBufferPos.startX + x;
+            int vY = node->windowBufferPos.startY + y;
+
+            if (vX >= 0 && vX < CK_MAX_CANVAS_COLS && vY >= 0 && vY < CK_MAX_CANVAS_ROWS) {
+                CKmasterBuffer.virtualChar[vY][vX] = fillGlyph;
+                CKmasterBuffer.virtualText[vY][vX] = tBlit;
+                CKmasterBuffer.virtualBg[vY][vX]   = bBlit;
+            }
+        }
+    }
+
+    // Update state flags
+    if (line == -1) {
+        node->cursorPos.x = 0;
+        node->cursorPos.y = 0;
+    } else {
+        node->cursorPos.x = 0; // ClearLine loops only reset horizontal spacing
+    }
+    
+    node->isDirty = true;
+    CK_ENV.termPending = true;
+    return true;
+}
 
 void CKterminal_DumpState(const char* filename) {
     if (filename == NULL) return;
@@ -338,7 +381,14 @@ void CKterminal_DumpState(const char* filename) {
 
         fprintf(dumpFile, "V-Row %03d: |", y);
         for (int x = 0; x < CK_MAX_CANVAS_COLS; x++) {
-            fputc(CKmasterBuffer.virtualChar[y][x], dumpFile);
+            char c = CKmasterBuffer.virtualChar[y][x];
+            
+            // Visual Anchor for debugging void glyph
+            if (c == CK_GLYPH_VOID) {
+                fputc('.', dumpFile);
+            } else {
+                fputc(c, dumpFile);
+            }
         }
         fprintf(dumpFile, "|\n");
     }
