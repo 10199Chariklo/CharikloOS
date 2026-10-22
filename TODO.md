@@ -46,6 +46,10 @@ Not every module fits neatly into a standard template. If you are importing exte
     *   Linear Greyscale maps
     *   Retro Amber and Green phosphor monochrome matrices
 
+
+*   **`CKentities` (Object-Bound Visual Effects & Collision Framework):** An object-oriented particle and trigger system that anchors directly to a `CKwindowNode` (centered or pinned to one of four corners). Uses `CKvelocity` primitives to drive procedural visual simulations—such as fluid smoke columns or wave generators—straight into target character matrices. Features an event-intercept pipeline that acts as a bidirectional game loop engine: nodes can either broadcast custom events via `CKpushBack` upon boundary collision detection (calculated via `CKrectUtils`), or listen for specific event IDs via `CKpopFront` to activate localized drawn effects.
+
+
 ### 3. CraftOS Parity Components (High-Tier Rings)
 *   **`CUparallel` / `CUtos`:** High-level abstractions enabling co-routine style function execution mappings and multi-process shell threading.
 *   **`CUgps` & `CUpaint`:** Modular UI extensions for spatial localization simulations and terminal-native bitmap artwork generation.

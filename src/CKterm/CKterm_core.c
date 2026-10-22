@@ -27,7 +27,6 @@ int CKprint(const char* format, ...) {
     return length;
 }
 
-
 void CKwrite(const char* text) {
     if (text == NULL) return;
     CKwindowNode* win = g_current;
@@ -77,7 +76,16 @@ void CKblit(const char* text, const char* textColors, const char* bgColors) {
     CK_ENV.termPending = true;
 }
 
-
+/** */
+void CKgetCursorPos(int *x, int *y) {
+    CKwindowNode* win = g_current;
+    if (win == NULL) { *x = 1; *y = 1; return; }
+    
+    // Translate internal 0-indexed bounds back to public 1-indexed metrics
+    *x = win->cursorPos.x + 1;
+    *y = win->cursorPos.y + 1;
+}
+/** */
 void CKsetCursorPos(const int x, const int y) {
     CKwindowNode* win = g_current;
     if (win == NULL) return;
@@ -89,28 +97,20 @@ void CKsetCursorPos(const int x, const int y) {
     CK_ENV.termPending = true;
 }
 
+/** */
+bool CKgetCursorBlink(bool *state) {
+    CKwindowNode* win = g_current;
+    if (win == NULL) { *state = false; return false; }
+    *state = win->cursorBlink;
+    return true;
+}
+/** */
 void CKsetCursorBlink(const bool blink) {
     CKwindowNode* win = g_current;
     if (win == NULL) return;
 
     win->cursorBlink = blink;
     CK_ENV.termPending = true;
-}
-
-void CKgetCursorPos(int *x, int *y) {
-    CKwindowNode* win = g_current;
-    if (win == NULL) { *x = 1; *y = 1; return; }
-    
-    // Translate internal 0-indexed bounds back to public 1-indexed metrics
-    *x = win->cursorPos.x + 1;
-    *y = win->cursorPos.y + 1;
-}
-
-bool CKgetCursorBlink(bool *state) {
-    CKwindowNode* win = g_current;
-    if (win == NULL) { *state = false; return false; }
-    *state = win->cursorBlink;
-    return true;
 }
 
 void CKgetSize(int *x, int *y) {
@@ -120,92 +120,93 @@ void CKgetSize(int *x, int *y) {
     *y = win->windowSize.y;
 }
 
+/** */
+bool CKfill(void) {
+    CKwindowNode* win = g_current;
+    if (win == NULL) return false;
+
+    // Default to white fg / black bg blit fallbacks
+    char activeTBlit = '0';
+    char activeBBlit = 'f';
+
+    // Lookup active tokens character matching configurations
+    for (int i = 0; i < 16; i++) {
+        if (CKpalette.data[i].colorID == win->activeBackgroundColor) {
+            activeBBlit = CKpalette.data[i].blitChar;
+        }
+        if (CKpalette.data[i].colorID == win->activeTextColor) {
+            activeTBlit = CKpalette.data[i].blitChar;
+        }
+    }
+
+    // Leverages our new primitive, leaving line blank (Defaults to full segment wipe)
+    return CKclearContext(win, activeTBlit, activeBBlit);
+}
+/** */
+bool CKfillLine(void) {
+    CKwindowNode* win = g_current;
+    if (win == NULL) return false;
+
+    // Isolate the row operation to the active vertical tracking bounds
+    int currentLine = win->cursorPos.y;
+    if (currentLine < 0 || currentLine >= win->windowSize.y) return false;
+
+    // Default palette lookup fallbacks
+    char activeTBlit = '0'; // White
+    char activeBBlit = 'f'; // Black
+
+    // Map your custom parent-inherited bitmasks back to raw blit text tokens
+    for (int i = 0; i < 16; i++) {
+        if (CKpalette.data[i].colorID == win->activeBackgroundColor) {
+            activeBBlit = CKpalette.data[i].blitChar;
+        }
+        if (CKpalette.data[i].colorID == win->activeTextColor) {
+            activeTBlit = CKpalette.data[i].blitChar;
+        }
+    }
+
+    // Leverages our central context engine by passing an explicit target row index constraint.
+    // Because activeBBlit is an opaque palette character, CKclearContext automatically 
+    // applies true empty text characters (' ') instead of CK_GLYPH_VOID.
+    return CKclearContext(win, activeTBlit, activeBBlit, currentLine);
+}
+
+/** */
 bool CKclear(void) {
     CKwindowNode* win = g_current;
     if (win == NULL) return false;
 
-     // Default to transparent
-    char activeTBlit = 'g';
-    char activeBBlit = 'g';
-
-    // If the node is a parent we check it's stateful colors
-    if (!win->parent) {
-        // Lookup active tokens character matching configuration definitions
-        for (int i = 0; i < 16; i++) {
-            if (CKpalette.data[i].colorID == win->activeBackgroundColor) {
-                activeBBlit = CKpalette.data[i].blitChar;
-                break;
-            }
-            if (CKpalette.data[i].colorID == win->activeTextColor) {
-                activeTBlit = CKpalette.data[i].blitChar;
-                break;
-            }
-        }
+    // If the node is a primary top-level root, default to a complete palette fill
+    if (win->parent == NULL) {
+        return CKfill();
     }
 
-    // Isolate deletions strictly inside this window node's virtual coordinate block
-    for (int y = 0; y < win->windowSize.y; y++) {
-        for (int x = 0; x < win->windowSize.x; x++) {
-            int vX = win->windowBufferPos.startX + x;
-            int vY = win->windowBufferPos.startY + y;
-
-            if (vX >= 0 && vX < CK_MAX_CANVAS_COLS && vY >= 0 && vY < CK_MAX_CANVAS_ROWS) {
-                CKmasterBuffer.virtualChar[vY][vX] = ' ';
-                CKmasterBuffer.virtualText[vY][vX] = activeTBlit;
-                CKmasterBuffer.virtualBg[vY][vX]   = activeBBlit;
-            }
-        }
-    }
-
-    win->cursorPos.x = 0;
-    win->cursorPos.y = 0;
-    win->isDirty = true;
-    CK_ENV.termPending = true;
-    return true;
+    // Transparent windows wipe clear back down to their alpha pass-through layers
+    return CKclearContext(win, BLIT_TRANSPARENT_CHAR, BLIT_TRANSPARENT_CHAR);
 }
-
+/** */
 bool CKclearLine(void) {
     CKwindowNode* win = g_current;
     if (win == NULL) return false;
 
-    int y = win->cursorPos.y;
-    if (y < 0 || y >= win->windowSize.y) return false;
-
-    char activeBBlit = 'f';
-    for (int i = 0; i < 16; i++) {
-        if (CKpalette.data[i].colorID == win->activeBackgroundColor) {
-            activeBBlit = CKpalette.data[i].blitChar;
-            break;
-        }
+    // If the node is a primary top-level root, default to a complete palette fill
+    if (win->parent == NULL) {
+        return CKfillLine();
     }
 
-    for (int x = 0; x < win->windowSize.x; x++) {
-        int vX = win->windowBufferPos.startX + x;
-        int vY = win->windowBufferPos.startY + y;
+    int currentLine = win->cursorPos.y;
+    if (currentLine < 0 || currentLine >= win->windowSize.y) return false;
 
-        if (vX >= 0 && vX < CK_MAX_CANVAS_COLS && vY >= 0 && vY < CK_MAX_CANVAS_ROWS) {
-            CKmasterBuffer.virtualChar[vY][vX] = ' ';
-            CKmasterBuffer.virtualText[vY][vX] = '0';
-            CKmasterBuffer.virtualBg[vY][vX]   = activeBBlit;
-        }
-    }
-
-    win->cursorPos.x = 0;
-    win->isDirty = true;
-    CK_ENV.termPending = true;
-    return true;
+    // Leverages our primitive by passing an explicit target row index constraint
+    return CKclearContext(win, BLIT_TRANSPARENT_CHAR, BLIT_TRANSPARENT_CHAR, currentLine);
 }
 
+/** */
 unsigned int CKgetTextColor(void) {
     CKwindowNode* win = g_current;
     return win ? win->activeTextColor : 0x0001;
 }
-
-unsigned int CKgetBackgroundColor(void) {
-    CKwindowNode* win = g_current;
-    return win ? win->activeBackgroundColor : 0x8000;
-}
-
+/** */
 bool CKsetTextColor(unsigned int colorsMask) {
     CKwindowNode* win = g_current;
     if (win == NULL) return false;
@@ -213,6 +214,12 @@ bool CKsetTextColor(unsigned int colorsMask) {
     return true;
 }
 
+/** */
+unsigned int CKgetBackgroundColor(void) {
+    CKwindowNode* win = g_current;
+    return win ? win->activeBackgroundColor : 0x8000;
+}
+/** */
 bool CKsetBackgroundColor(unsigned int colorsMask) {
     CKwindowNode* win = g_current;
     if (win == NULL) return false;

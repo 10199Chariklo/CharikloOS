@@ -8,9 +8,6 @@
 /* Chariklo Subsystem */
 #include "CKtypes_int.h"
 
-// Immutable 17th Blit Character representing true transparency layer pass-through
-#define BLIT_TRANSPARENT_CHAR 'g'
-
 // typedef struct containing header data
 typedef struct {
     bool isA;       //Achromatic

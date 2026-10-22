@@ -85,5 +85,27 @@ void CKplatformRefresh(void);
  */
 void CKterminal_DumpState(const char* filename);
 
+/* Place this inside include/CKterminal_int.h */
+
+/**
+ * @brief Internal core primitive to clear or fill a window node context slice.
+ * @param node Validated pointer to the target window layout node.
+ * @param tBlit The Blit character to apply to the text plane (e.g. '0' or 'g').
+ * @param bBlit The Blit character to apply to the background plane (e.g. 'f' or 'g').
+ * @param line The relative 0-indexed local row to clear, or -1 to clear the entire node segment.
+ * @return True on successful buffer clear, false if node context layout is invalid.
+ */
+bool CKclearContext_int(CKwindowNode* node, char tBlit, char bBlit, int line);
+
+/**
+ * @brief Macro wrapper providing pseudo-optional argument defaults for line segments.
+ *        If called with 3 arguments, it defaults line to -1 (Full screen wipe).
+ */
+#define CLEAR_CONTEXT_MACRO(_1, _2, _3, _4, NAME, ...) NAME
+#define CKclearContext(...) \
+    CLEAR_CONTEXT_MACRO(__VA_ARGS__, CKclearContext_4, CKclearContext_3)(__VA_ARGS__)
+
+#define CKclearContext_3(node, tBlit, bBlit)       CKclearContext_int(node, tBlit, bBlit, -1)
+#define CKclearContext_4(node, tBlit, bBlit, line) CKclearContext_int(node, tBlit, bBlit, line)
 
 #endif /* CK_TERMINAL_INT_H */
