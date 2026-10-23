@@ -13,18 +13,18 @@ CKwindowHandle OUcreate(CKwindowHandle parent, int x, int y, int width, int heig
     }
 
     CKwindowNode* parentNode = (CKwindowNode*)parent;
-    int absoluteScreenX = x;
-    int absoluteScreenY = y;
 
-    if (parentNode != NULL) {
-        absoluteScreenX += parentNode->windowPos.startX;
-        absoluteScreenY += parentNode->windowPos.startY;
-    }
+    // 1. Pack loose user inputs straight into a temporary stack-based math blueprint record
+    // We treat 'width' and 'height' as relative shifts to find the target end coordinates.
+    CKrect inputBounds;
+    inputBounds.startX = x;
+    inputBounds.startY = y;
+    inputBounds.endX   = x + width;
+    inputBounds.endY   = y + height;
 
     // Invoke factory passing parent handle natively to configure default alpha states
-    CKwindowNode* newWindow = CKwindow_Create(parent, absoluteScreenX, absoluteScreenY, width, height);
+    CKwindowNode* newWindow = CKwindow_Create(parent, inputBounds);
     if (newWindow == NULL) return NULL;
-
 
     if (CK_ENV.nativeWindowNode == NULL) {
         CK_ENV.nativeWindowNode = newWindow;
