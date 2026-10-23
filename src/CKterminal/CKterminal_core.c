@@ -1,11 +1,16 @@
 /* Standard C11 Libraries */
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 /* Chariklo Subsystem */
 #include "CKterminal_int.h" // Local module header
 #include "CKpalette_int.h"
+#include "CKgraphUtils.h"
+#include "CKtypes_int.h"
+#include "CKhandles.h"
+
 #include "CKrectUtils_int.h"
 
 // Define the global master engine buffer instance
@@ -79,21 +84,19 @@ CKwindowNode* CKwindow_Create(CKwindowHandle parent, CKrect bounds) {
         g_nextVirtualX += width; // Wrap columns safely
     }
 
-    // 4. Initialize structural tracking registries
+    // 4. Initialize structural tracking registries via the embedded Graph Header
+    node->graphNode.parent       = NULL;
+    node->graphNode.firstChild   = NULL;
+    node->graphNode.prevSibling  = NULL;
+    node->graphNode.nextSibling  = NULL;
+
     node->cursorPos.x = 0;
     node->cursorPos.y = 0;
     node->cursorBlink = true;
     node->isDirty     = true;
     node->isVisible   = true;
-    
-    node->parent       = parent;
-    node->firstChild   = NULL;
-    node->prevSibling  = NULL;
-    node->nextSibling  = NULL;
 
     // 5. STATEFUL COLOR INHERITANCE INJECTION
-    // Rather than performing loops on every keystroke, the creation pipeline samples 
-    // the parent's active layout colors once right at birth. If parentless, it applies defaults.
     char defaultTextBlit, defaultBgBlit;
     
     if (parent == NULL) {
@@ -106,8 +109,7 @@ CKwindowNode* CKwindow_Create(CKwindowHandle parent, CKrect bounds) {
         node->activeTextColor       = parentNode->activeTextColor;
         node->activeBackgroundColor = parentNode->activeBackgroundColor;
         
-        // The virtual buffers remain completely transparent pass-through spaces.
-        // This ensures the window does not corrupt lower layout layers until it draws content!
+        // Virtual buffers remain completely transparent pass-through spaces
         defaultTextBlit = BLIT_TRANSPARENT_CHAR; // 'g'
         defaultBgBlit   = BLIT_TRANSPARENT_CHAR; // 'g'
     }
@@ -129,27 +131,55 @@ CKwindowNode* CKwindow_Create(CKwindowHandle parent, CKrect bounds) {
     return node;
 }
 
-void CKterminal_CascadeDirty(CKwindowNode* root) {
-    if (root == NULL) return;
-    root->isDirty = true;
+// 1. Generic Flag Modifier Visitor
+static bool CascadeFlagVisitor(CKgraphNodeHandle node, void* context) {
+    if (!node) return false;
+    
+    CKwindowNode* win = (CKwindowNode*)node;
+    
+    // Recover our composite target flags from the type-agnostic context pointer
+    uintptr_t activeFlags = (uintptr_t)context;
 
-    CKwindowNode* child = root->firstChild;
-    while (child != NULL) {
-        CKterminal_CascadeDirty(child);
-        child = child->nextSibling;
+    // Condition 1: Evaluate structural dirty modifications
+    if (activeFlags & CK_CASCADE_DIRTY) {
+        win->isDirty = true;
     }
+
+    // Condition 2: Evaluate layout hide operations
+    if (activeFlags & CK_CASCADE_HIDE) {
+        win->isVisible = false;
+        win->isDirty   = true; // Hiding an item inherently flags the canvas layout as dirty
+    }
+
+    // Condition 3: Evaluate layout show operations
+    if (activeFlags & CK_CASCADE_SHOW) {
+        win->isVisible = true;
+        win->isDirty   = true; // Showing an item forces structural redraw sweeps
+    }
+    
+    return true; // Continue the iterative loop traversal
+}
+
+// 2. The Upgraded, Non-Recursive Cascade Flag Engine Interface
+void CKterminal_CascadeFlag(CKwindowHandle root, unsigned int flags) {
+    if (root == NULL || flags == 0) return;
+    
+    // Cast the raw numeric flag value directly into the context pointer to avoid stack usage
+    uintptr_t contextPayload = (uintptr_t)flags;
+    
+    // Trigger our high-performance non-recursive pre-order flattening pass
+    CKgraph_Flatten((CKgraphNodeHandle)root, CK_PRE_ORDER, CascadeFlagVisitor, (void*)contextPayload);
 }
 
 void CKterminal_FreeWindowNode(CKwindowNode* node) {
     if (node == NULL) return;
 
-    // Safely detach hierarchical topological nodes before executing memory cleanups
-    if (node->prevSibling) node->prevSibling->nextSibling = node->nextSibling;
-    if (node->nextSibling) node->nextSibling->prevSibling = node->prevSibling;
-    if (node->parent && node->parent->firstChild == node) node->parent->firstChild = node->nextSibling;
+    // 1. Invoke the graph core to safely unbind layout links across siblings and parents
+    CKgraph_DetachSubTree((CKgraphNodeHandle)node);
 
-    // CKTBO and CKTBOex allocations are both safely released through the common base header
+    // 2. Safely release the concrete memory block back to the system heap
     free(node);
+    
     printf("[CKgc] Target Window Object successfully collected and freed.\n");
 }
 
@@ -221,45 +251,57 @@ int CKfwritef(CKwindowNode* win, const void* buffer, size_t count) {
 }
 
 /* STAGE 2: THE COMPOSITOR VIEW TREE COUPLER */
-void CKterminal_CompositeTree(CKwindowNode* root) {
-    if (root == NULL || !root->isVisible) return;
+// 1. Non-Recursive View Matrix Compositor Node Visitor
+static bool CompositeNodeVisitor(CKgraphNodeHandle node, void* context) {
+    if (!node) return false;
 
-    int width = root->windowSize.x;
-    int height = root->windowSize.y;
+    // Unpack the type-agnostic node handle straight to our private structural layout
+    CKwindowNode* win = (CKwindowNode*)node;
+    
+    // Core Feature Requirement: Even if a window is hidden or clean, we still process it 
+    // to clear out stale artifacts or route transparent blanks down if it's invisible.
+    int width  = win->windowSize.x;
+    int height = win->windowSize.y;
 
     for (int relativeY = 0; relativeY < height; relativeY++) {
         for (int relativeX = 0; relativeX < width; relativeX++) {
             
-            int physicalX = root->windowPos.startX + relativeX;
-            int physicalY = root->windowPos.startY + relativeY;
+            int physicalX = win->windowPos.startX + relativeX;
+            int physicalY = win->windowPos.startY + relativeY;
 
-            // Enforce hard hardware viewport layout constraints
+            // Enforce strict physical hardware viewport monitor bounds
             if (physicalX >= 0 && physicalX < CK_COLS && physicalY >= 0 && physicalY < CK_ROWS) {
-                int virtualX = root->windowBufferPos.startX + relativeX;
-                int virtualY = root->windowBufferPos.startY + relativeY;
+                int virtualX = win->windowBufferPos.startX + relativeX;
+                int virtualY = win->windowBufferPos.startY + relativeY;
 
-                char virtualBgToken  = CKmasterBuffer.virtualBg[virtualY][virtualX];
-                char virtualTxtToken = CKmasterBuffer.virtualText[virtualY][virtualX];
-                char virtualChar     = CKmasterBuffer.virtualChar[virtualY][virtualX];
+                char virtualBgToken, virtualTxtToken, virtualChar;
 
-                // --- FLAT PHYSICAL SAMPLING PARADIGM ---
-                // If this window's virtual buffer slot contains 'g' (Transparent Pass-Thru),
-                // we DO NOT mutate the physical matrix cell. We leave whatever sibling window
-                // processed before us on that coordinate untouched!
+                // ARCHITECTURAL UPGRADE INTERCEPT: Non-Destructive Visibility Masking
+                // If the window container's hidden bit is flag-set, evaluate alpha pass-through tokens.
+                // This shields lower display contexts from drawing corruption without altering virtual memory tracks!
+                if (!win->isVisible) {
+                    virtualBgToken  = BLIT_TRANSPARENT_CHAR; // 'g'
+                    virtualTxtToken = BLIT_TRANSPARENT_CHAR; // 'g'
+                    virtualChar     = CK_GLYPH_VOID;         // 0xFF
+                } else {
+                    // Standard visibility: read content directly from the window's virtual partition slice
+                    virtualBgToken  = CKmasterBuffer.virtualBg[virtualY][virtualX];
+                    virtualTxtToken = CKmasterBuffer.virtualText[virtualY][virtualX];
+                    virtualChar     = CKmasterBuffer.virtualChar[virtualY][virtualX];
+                }
 
-                // Channel 1: Background Layer Tracker
+                // --- LAYER COMPOSITING PIPELINE ---
+                // Channel 1: Background Color Layer Tracker
                 if (virtualBgToken != BLIT_TRANSPARENT_CHAR) {
                     CKmasterBuffer.physicalBg[physicalY][physicalX] = virtualBgToken;
                 }
                 
-                // Channel 2: Foreground Layer Tracker (Completely independent!)
+                // Channel 2: Foreground Color Layer Tracker 
                 if (virtualTxtToken != BLIT_TRANSPARENT_CHAR) {
                     CKmasterBuffer.physicalText[physicalY][physicalX] = virtualTxtToken;
                 }
 
-                // Channel 3: Glyph Shape Tracker
-                // If a user blits a text character string, it stamps over the physical channel.
-                // If it's a blank space, it leaves whatever background character glyphs are below it!
+                // Channel 3: Glyph Shape Character String Tracker
                 if (virtualChar != CK_GLYPH_VOID) {
                     CKmasterBuffer.physicalChar[physicalY][physicalX] = virtualChar;
                 }
@@ -267,13 +309,19 @@ void CKterminal_CompositeTree(CKwindowNode* root) {
         }
     }
 
-    // Recurse sequentially over your child window nodes from back to front.
-    // The sibling link order inside your tree list naturally defines the true Z-Index layers!
-    CKwindowNode* child = root->firstChild;
-    while (child != NULL) {
-        CKterminal_CompositeTree(child);
-        child = child->nextSibling;
-    }
+    // ROUND-UP PHASE: Cleanse the window's local dirty state tracking register
+    win->isDirty = false;
+
+    return true; // Return true to advance to the next Z-index sibling node smoothly
+}
+
+// 2. The Upgraded, Non-Recursive View Tree Coupler Interface
+void CKterminal_CompositeTree(CKwindowNode* root) {
+    if (root == NULL) return;
+
+    // Trigger our iterative, non-recursive pre-order layout traversal pass.
+    // The link arrangement order of siblings naturally maps the correct back-to-front rendering Z-indices!
+    CKgraph_Flatten((CKgraphNodeHandle)root, CK_PRE_ORDER, CompositeNodeVisitor, NULL);
 }
 
 bool CKclearContext_int(CKwindowNode* node, char tBlit, char bBlit, int line) {
@@ -316,7 +364,9 @@ bool CKclearContext_int(CKwindowNode* node, char tBlit, char bBlit, int line) {
         node->cursorPos.x = 0; // ClearLine loops only reset horizontal spacing
     }
     
-    node->isDirty = true;
+    // Modernized Intercept: Use our unified cascade flag system instead of a manual assignment 
+    CKterminal_CascadeFlag((CKwindowHandle)node, CK_CASCADE_DIRTY);
+    
     CK_ENV.termPending = true;
     return true;
 }

@@ -23,7 +23,16 @@
 // Immutable character glyph representing no entry
 #define CK_GLYPH_VOID  ((char)0xFF) 
 
-/* Public Spatial Abstractions */
+/* --- Dynamic Acrylic Graph engine | CKgraphUtils enums --- */
+// Order flags for linear flattening and visitors
+typedef enum {
+    CK_PRE_ORDER,   // Parent -> Left Sibling -> Right Sibling (Z-index/Rendering)
+    CK_POST_ORDER,  // Left Sibling -> Right Sibling -> Parent (Teardown/Deallocation)
+    CK_IN_ORDER     // Left Sibling -> Parent -> Right Sibling (Binary/Sorted Layouts)
+} CKtraversalOrder;
+
+/* --- Public Spatial Abstractions --- */
+
 typedef struct {
     int x;
     int y;

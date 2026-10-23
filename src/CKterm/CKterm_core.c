@@ -10,6 +10,7 @@
 #include "CKpalette_int.h"
 #include "OUcolors.h"
 #include "OUwindow.h"
+#include "CKgraphUtils.h"
 
 int CKprint(const char* format, ...) {
     if (format == NULL) return 0;
@@ -66,12 +67,9 @@ void CKblit(const char* text, const char* textColors, const char* bgColors) {
 
     win->cursorPos.x += textLen;
     
-    // ARCHITECTURAL CORRECTION: Bypassing a local window dirty flag is insufficient for transparency.
-    // Because transparent windows rely on rendering data from windows underneath them, a change to an
-    // overlay requires a full topology refresh to force historical caches to re-evaluate structural layers.
-    if (CK_ENV.nativeWindowNode != NULL) {
-        CKterminal_CascadeDirty(CK_ENV.nativeWindowNode);
-    }
+    // ARCHITECTURAL UPGRADE: Instead of running heavy global dirty cascades across 
+    // the entire OS node network, use our high-performance targeted flag engine.
+    CKterminal_CascadeFlag((CKwindowHandle)win, CK_CASCADE_DIRTY);
     
     CK_ENV.termPending = true;
 }
@@ -177,7 +175,7 @@ bool CKclear(void) {
     if (win == NULL) return false;
 
     // If the node is a primary top-level root, default to a complete palette fill
-    if (win->parent == NULL) {
+    if (win->graphNode.parent == NULL) {
         return CKfill();
     }
 
@@ -190,7 +188,7 @@ bool CKclearLine(void) {
     if (win == NULL) return false;
 
     // If the node is a primary top-level root, default to a complete palette fill
-    if (win->parent == NULL) {
+    if (win->graphNode.parent == NULL) {
         return CKfillLine();
     }
 
