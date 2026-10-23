@@ -6,6 +6,7 @@
 /* Chariklo Subsystem */
 #include "CKterminal_int.h" // Local module header
 #include "CKpalette_int.h"
+#include "CKrectUtils_int.h"
 
 // Define the global master engine buffer instance
 CKmasterTerminalBuffer CKmasterBuffer;
@@ -51,18 +52,19 @@ void CKterminal_InitMasterBuffer(void) {
     memset(CKmasterBuffer.physicalBg, 'f', sizeof(CKmasterBuffer.physicalBg));
 }
 
-CKwindowNode* CKwindow_Create(CKwindowHandle parent, int x, int y, int width, int height) {
+CKwindowNode* CKwindow_Create(CKwindowHandle parent, CKrect bounds) {
     // 1. Allocate block memory segment
     CKwindowNode* node = (CKwindowNode*)malloc(sizeof(CKwindowNode));
     if (node == NULL) return NULL;
 
-    // 2. Map target viewport screen dimensions
-    node->windowPos.startX = x;
-    node->windowPos.startY = y;
-    node->windowPos.endX   = x + width;
-    node->windowPos.endY   = y + height;
-    node->windowSize.x     = width;
-    node->windowSize.y     = height;
+    // 2. Map target viewport screen dimensions using our math engine normalizer
+    node->windowPos = CKrectNormalize(bounds.startX, bounds.startY, bounds.endX, bounds.endY);
+    
+    // Derive absolute sizing metrics cleanly from the normalized coordinate entries
+    int width  = node->windowPos.endX - node->windowPos.startX;
+    int height = node->windowPos.endY - node->windowPos.startY;
+    node->windowSize.x = width;
+    node->windowSize.y = height;
 
     // 3. Segment isolated virtual allocation coordinates
     node->windowBufferPos.startX = g_nextVirtualX;

@@ -50,7 +50,13 @@ CKwindowHandle CKgetTerminal(CKwindowHandle handle);
 
 void CKterminal_InitMasterBuffer(void);
 
-CKwindowNode* CKwindow_Create(CKwindowHandle parent, int x, int y, int width, int height);
+/**
+ * @brief Allocates and registers a new structural tracking node within the viewport tree topology.
+ * @param parent Opaque handle mapping to the parent node context frame or NULL.
+ * @param bounds Spatial blueprint coordinates specifying position and dimensions.
+ * @return A validated internal CKwindowNode structure reference on success, or NULL.
+ */
+CKwindowNode* CKwindow_Create(CKwindowHandle parent, CKrect bounds);
 
 void CKterminal_CascadeDirty(CKwindowHandle root);
 
