@@ -1,6 +1,7 @@
 /* Chariklo Subsystem */
 #include "CKterminal_int.h"
 #include "CKtypes_int.h"
+#include "CKgraphUtils.h"
 #include "OUwindow.h" // Local module header
 
 /* C11 Compile-Time Assertion: Enforces complete structure verification across translation units */
@@ -12,44 +13,30 @@ CKwindowHandle OUcreate(CKwindowHandle parent, int x, int y, int width, int heig
         return NULL;
     }
 
-    CKwindowNode* parentNode = (CKwindowNode*)parent;
-
     // 1. Pack loose user inputs straight into a temporary stack-based math blueprint record
-    // We treat 'width' and 'height' as relative shifts to find the target end coordinates.
     CKrect inputBounds;
     inputBounds.startX = x;
     inputBounds.startY = y;
     inputBounds.endX   = x + width;
     inputBounds.endY   = y + height;
 
-    // Invoke factory passing parent handle natively to configure default alpha states
+    // 2. Invoke factory passing parent handle natively to configure default alpha states
     CKwindowNode* newWindow = CKwindow_Create(parent, inputBounds);
     if (newWindow == NULL) return NULL;
 
+    // 3. Frame Allocation Routing Optimization
     if (CK_ENV.nativeWindowNode == NULL) {
+        // Formally establish the desktop chassis baseline
         CK_ENV.nativeWindowNode = newWindow;
-        return (CKwindowHandle)newWindow;
-    }
-
-    // Standard Topology Tree Stacking Pass
-    if (parentNode != NULL) {
-        if (parentNode->firstChild == NULL) {
-            parentNode->firstChild = newWindow;
-        } else {
-            CKwindowNode* currentSibling = parentNode->firstChild;
-            while (currentSibling->nextSibling != NULL) {
-                currentSibling = currentSibling->nextSibling;
-            }
-            currentSibling->nextSibling = newWindow;
-            newWindow->prevSibling = currentSibling;
-        }
     } else {
-        CKwindowNode* currentSibling = CK_ENV.nativeWindowNode;
-        while (currentSibling->nextSibling != NULL) {
-            currentSibling = currentSibling->nextSibling;
-        }
-        currentSibling->nextSibling = newWindow;
-        newWindow->prevSibling = currentSibling;
+        // Modernized Graph Topology Stacking Pass
+        // If parent is NULL, we append it as a sibling to the native baseline chassis node
+        CKgraphNodeHandle targetParent = (parent != NULL) 
+            ? (CKgraphNodeHandle)parent 
+            : (CKgraphNodeHandle)CK_ENV.nativeWindowNode;
+
+        // One atomic architectural function replaces your manual while loops entirely!
+        CKgraph_AppendChild(targetParent, (CKgraphNodeHandle)newWindow);
     }
 
     newWindow->isDirty = true;

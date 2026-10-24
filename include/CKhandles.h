@@ -30,12 +30,14 @@
 */
 
 // Forward structural declarations for system objects
-typedef struct CKwindowNode   CKwindowNode;
-typedef struct CKfile         CKfile;
+typedef struct CKgraphNodeHeader    CKgraphNodeHeader; // Added: Foundation Graph Utility Structure
+typedef struct CKwindowNode         CKwindowNode;
+typedef struct CKfile               CKfile;
 
 // Public Object Handle Aliases
-typedef struct CKwindowNode*  CKwindowHandle;
-typedef struct CKfile*        CKfileHandle;
+typedef struct CKgraphNodeHeader*   CKgraphNodeHandle; // Added: Public type-agnostic Graph/Tree Node Handle
+typedef struct CKwindowNode*        CKwindowHandle;
+typedef struct CKfile*              CKfileHandle;
 
 /*  *   Type handles                                                            
     * DESIGN & USAGE NOTE:
@@ -57,7 +59,7 @@ typedef struct CKfile*        CKfileHandle;
     *    CKmyModule.setPlatformReqs(CKplatformReqsHandle);
 */
 
-// Forward structural declarations for type safety
+// Forward structural declarations for system types
 typedef struct CKplatformReqs CKplatformReqs;
 typedef struct CKenv          CKenv;
 
